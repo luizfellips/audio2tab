@@ -6,7 +6,9 @@ import numpy as np
 from app.core.config import Settings
 from app.models.notes import NoteEvent
 from app.services.harmonic_correction import (
+    align_cadence_octaves,
     apply_harmonic_corrections,
+    apply_semitone_flat_bias,
     fold_harmonic_ghosts,
     fold_unpaired_octave_errors,
 )
@@ -239,9 +241,40 @@ def _collapse_same_pitch_repeats(
     return kept
 
 
+def _merge_consecutive_same_pitch_runs(
+    notes: list[NoteEvent],
+    max_start_gap_sec: float,
+) -> list[NoteEvent]:
+    """Merge back-to-back same pitch-class notes when their starts are close together."""
+    if max_start_gap_sec <= 0 or len(notes) < 2:
+        return notes
+
+    kept: list[NoteEvent] = [notes[0].model_copy()]
+    for note in notes[1:]:
+        previous = kept[-1]
+        if (
+            pitch_class(note.pitch) == pitch_class(previous.pitch)
+            and note.start - previous.start <= max_start_gap_sec
+        ):
+            winner = note if _note_amplitude(note) > _note_amplitude(previous) else previous
+            kept[-1] = winner.model_copy(
+                update={
+                    "start": min(previous.start, note.start),
+                    "end": max(previous.end, note.end),
+                    "velocity": max(previous.velocity, note.velocity),
+                    "amplitude": max(previous.amplitude, note.amplitude),
+                }
+            )
+            continue
+        kept.append(note.model_copy())
+
+    return kept
+
+
 def _extract_onset_melody(
     notes: list[NoteEvent],
     cluster_sec: float,
+    cluster_split_min_amplitude: float = 0.0,
 ) -> list[NoteEvent]:
     """Pick one pitch per attack cluster with octave/alternate-pitch heuristics."""
     if not notes:
@@ -251,10 +284,23 @@ def _extract_onset_melody(
     clusters: list[list[NoteEvent]] = [[ordered[0]]]
 
     for note in ordered[1:]:
-        if note.start - clusters[-1][0].start <= cluster_sec:
-            clusters[-1].append(note)
-        else:
+        cluster = clusters[-1]
+        within_window = note.start - cluster[0].start <= cluster_sec
+        if not within_window:
             clusters.append([note])
+            continue
+
+        if cluster_split_min_amplitude > 0:
+            note_pc = pitch_class(note.pitch)
+            cluster_pcs = {pitch_class(existing.pitch) for existing in cluster}
+            if (
+                note_pc not in cluster_pcs
+                and _note_amplitude(note) >= cluster_split_min_amplitude
+            ):
+                clusters.append([note])
+                continue
+
+        cluster.append(note)
 
     melody: list[NoteEvent] = []
     previous_pitch_class: str | None = None
@@ -271,7 +317,11 @@ def _apply_melody_extraction(notes: list[NoteEvent], settings: Settings) -> list
     if mode == "none":
         return notes
     if mode == "onset":
-        return _extract_onset_melody(notes, cluster_sec=settings.onset_cluster_sec)
+        return _extract_onset_melody(
+            notes,
+            cluster_sec=settings.onset_cluster_sec,
+            cluster_split_min_amplitude=settings.onset_cluster_split_min_amplitude,
+        )
     if settings.enforce_monophonic:
         return _apply_monophonic_mode(notes, settings)
     return notes
@@ -366,6 +416,45 @@ def _apply_note_durations(notes: list[NoteEvent], settings: Settings) -> list[No
     return extended
 
 
+def _collapse_simultaneous_onsets(
+    notes: list[NoteEvent],
+    window_sec: float,
+) -> list[NoteEvent]:
+    """When several notes share nearly the same start, keep the loudest one."""
+    if window_sec <= 0 or len(notes) < 2:
+        return notes
+
+    ordered = sorted(notes, key=lambda note: note.start)
+    kept: list[NoteEvent] = [ordered[0].model_copy()]
+
+    for note in ordered[1:]:
+        previous = kept[-1]
+        if note.start - previous.start <= window_sec:
+            if _note_amplitude(note) > _note_amplitude(previous):
+                kept[-1] = note.model_copy()
+            continue
+        kept.append(note.model_copy())
+
+    return kept
+
+
+def _trim_leading_silence(notes: list[NoteEvent], enabled: bool) -> list[NoteEvent]:
+    """Align the first attack to t=0 so playback and tab match the riff start."""
+    if not enabled or not notes:
+        return notes
+
+    offset = min(note.start for note in notes)
+    if offset <= 0.05:
+        return notes
+
+    trimmed: list[NoteEvent] = []
+    for note in notes:
+        start = round(note.start - offset, 2)
+        end = round(max(note.end - offset, start + 0.01), 2)
+        trimmed.append(note.model_copy(update={"start": start, "end": end}))
+    return trimmed
+
+
 def _normalize_note_timing(notes: list[NoteEvent], settings: Settings) -> list[NoteEvent]:
     """Fix overlapping start/end in the note list (written to notes.json / positions.json)."""
     gap = settings.note_onset_spacing_sec
@@ -426,13 +515,20 @@ def clean_notes(
     if settings.melody_extraction_mode.lower() == "onset":
         prepared = fold_harmonic_ghosts(filtered, settings)
         prepared = _drop_weak_overlapped(prepared, settings.weak_note_amplitude_cap)
-        melodic_line = _extract_onset_melody(prepared, cluster_sec=settings.onset_cluster_sec)
+        melodic_line = _extract_onset_melody(
+            prepared,
+            cluster_sec=settings.onset_cluster_sec,
+            cluster_split_min_amplitude=settings.onset_cluster_split_min_amplitude,
+        )
         if settings.harmonic_fold_enabled:
             melodic_line = fold_unpaired_octave_errors(melodic_line, settings)
         deduped = _collapse_same_pitch_repeats(
             melodic_line,
             min_gap_sec=settings.same_pitch_repeat_gap_sec,
         )
+        deduped = apply_semitone_flat_bias(deduped, settings)
+        if settings.harmonic_fold_enabled:
+            deduped = align_cadence_octaves(deduped, settings)
     else:
         merged = (
             _merge_same_pitch_runs(filtered, max_gap_sec=settings.merge_same_pitch_max_gap_sec)
@@ -445,8 +541,17 @@ def clean_notes(
         melodic = _remove_melodic_outliers(monophonic, settings)
         deduped = _remove_isolated_spikes(melodic, settings)
 
+    deduped = _merge_consecutive_same_pitch_runs(
+        deduped,
+        max_start_gap_sec=settings.merge_consecutive_same_pitch_max_gap_sec,
+    )
+    deduped = _collapse_simultaneous_onsets(
+        deduped,
+        window_sec=settings.simultaneous_onset_window_sec,
+    )
     deduped = _normalize_note_timing(deduped, settings)
     deduped = _apply_note_durations(deduped, settings)
+    deduped = _trim_leading_silence(deduped, settings.trim_leading_silence)
 
     cleaned: list[NoteEvent] = []
     for note in deduped:

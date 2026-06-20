@@ -65,8 +65,14 @@ class Settings(BaseSettings):
     # onset = one note per attack cluster (best for riffs); overlap = legacy monophonic; none = skip
     melody_extraction_mode: str = "onset"
     onset_cluster_sec: float = 0.10
+    # Split onset cluster when a new pitch class appears above this amplitude (phone riffs)
+    onset_cluster_split_min_amplitude: float = 0.0
+    # Correct Basic Pitch sharp bias on compressed audio (F#→F, G#→D context)
+    semitone_flat_bias: bool = False
     # Collapse rapid same-pitch re-attacks after onset extraction (Suno shimmer)
     same_pitch_repeat_gap_sec: float = 0.22
+    # Merge consecutive same pitch-class notes when starts are within this gap (phone dedup)
+    merge_consecutive_same_pitch_max_gap_sec: float = 0.0
     # off = keep Basic Pitch note lengths; legato = extend each note toward the next attack
     note_duration_mode: str = "legato"
     note_legato_gap_sec: float = 0.02
@@ -75,6 +81,10 @@ class Settings(BaseSettings):
     note_onset_spacing_sec: float = 0.02
     # Minimum seconds between consecutive note starts (0 = keep Basic Pitch onsets)
     note_min_inter_onset_sec: float = 0.0
+    # Shift all notes so the first attack starts at 0 (phone voice notes with long intro)
+    trim_leading_silence: bool = False
+    # Keep only the strongest note when multiple onsets fall within this window (seconds)
+    simultaneous_onset_window_sec: float = 0.0
 
     @property
     def max_upload_bytes(self) -> int:

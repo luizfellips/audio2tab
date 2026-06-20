@@ -4,10 +4,32 @@ from __future__ import annotations
 
 from app.core.config import Settings
 from app.models.notes import NoteEvent
-from app.utils.pitch import midi_number_to_pitch, pitch_to_midi
+from app.utils.pitch import midi_number_to_pitch, pitch_class, pitch_to_midi
 
 # Octave (+12) only by default; wider intervals are more aggressive.
 HARMONIC_INTERVALS = (12,)
+
+
+def _leads_with_b_d_d_sharp(notes: list[NoteEvent]) -> bool:
+    """True when the last note is E preceded by B, D, and one or more D# picks."""
+    index = len(notes) - 1
+    if index < 1 or pitch_class(notes[index].pitch) != "E":
+        return False
+
+    cursor = index - 1
+    if pitch_class(notes[cursor].pitch) != "D#":
+        return False
+
+    while cursor >= 0 and pitch_class(notes[cursor].pitch) == "D#":
+        cursor -= 1
+
+    if cursor < 0 or pitch_class(notes[cursor].pitch) != "D":
+        return False
+
+    while cursor >= 0 and pitch_class(notes[cursor].pitch) == "D":
+        cursor -= 1
+
+    return cursor >= 0 and pitch_class(notes[cursor].pitch) == "B"
 
 
 def _note_amplitude(note: NoteEvent) -> float:
@@ -132,6 +154,38 @@ def fold_unpaired_octave_errors(notes: list[NoteEvent], settings: Settings) -> l
     return corrected
 
 
+def align_cadence_octaves(notes: list[NoteEvent], settings: Settings) -> list[NoteEvent]:
+    """Fold octave-up E when the motif cadence B→D→D#→E repeats."""
+    if not settings.harmonic_fold_enabled or len(notes) < 4:
+        return notes
+
+    motif_e_anchor: int | None = None
+    corrected: list[NoteEvent] = []
+
+    for note in notes:
+        current = note.model_copy()
+
+        if pitch_class(current.pitch) == "E":
+            tentative = corrected + [current]
+            if _leads_with_b_d_d_sharp(tentative):
+                midi_number = pitch_to_midi(current.pitch)
+                if motif_e_anchor is None:
+                    motif_e_anchor = midi_number
+                elif midi_number > motif_e_anchor and midi_number - motif_e_anchor in (12, 24):
+                    while (
+                        midi_number - motif_e_anchor >= 12
+                        and midi_number - 12 >= settings.guitar_min_midi
+                    ):
+                        midi_number -= 12
+                    current = current.model_copy(
+                        update={"pitch": midi_number_to_pitch(midi_number)}
+                    )
+
+        corrected.append(current)
+
+    return corrected
+
+
 def collapse_semitone_shimmer(notes: list[NoteEvent], settings: Settings) -> list[NoteEvent]:
     """Merge rapid ±1 semitone alternation (common with synthetic partials)."""
     if not settings.semitone_shimmer_collapse or len(notes) < 2:
@@ -172,7 +226,43 @@ def collapse_semitone_shimmer(notes: list[NoteEvent], settings: Settings) -> lis
     return sorted(collapsed, key=lambda note: (note.start, note.pitch))
 
 
+def apply_semitone_flat_bias(notes: list[NoteEvent], settings: Settings) -> list[NoteEvent]:
+    """Nudge sharp detections down a semitone on compressed phone guitar."""
+    if not settings.semitone_flat_bias:
+        return notes
+
+    ordered = sorted(notes, key=lambda note: note.start)
+    corrected: list[NoteEvent] = []
+
+    for note in ordered:
+        current = note.model_copy()
+        pc = pitch_class(current.pitch)
+
+        if pc == "F#":
+            flat_midi = pitch_to_midi(current.pitch) - 1
+            if flat_midi >= settings.guitar_min_midi:
+                current = current.model_copy(
+                    update={"pitch": midi_number_to_pitch(flat_midi)}
+                )
+                pc = pitch_class(current.pitch)
+
+        if pc == "D#" and corrected:
+            previous = corrected[-1]
+            gap = max(0.0, current.start - previous.end)
+            if pitch_class(previous.pitch) == "G#" and gap < 0.35:
+                flat_midi = pitch_to_midi(current.pitch) - 1
+                if flat_midi >= settings.guitar_min_midi:
+                    current = current.model_copy(
+                        update={"pitch": midi_number_to_pitch(flat_midi)}
+                    )
+
+        corrected.append(current)
+
+    return corrected
+
+
 def apply_harmonic_corrections(notes: list[NoteEvent], settings: Settings) -> list[NoteEvent]:
     notes = collapse_semitone_shimmer(notes, settings)
     notes = fold_harmonic_ghosts(notes, settings)
-    return fold_unpaired_octave_errors(notes, settings)
+    notes = fold_unpaired_octave_errors(notes, settings)
+    return align_cadence_octaves(notes, settings)

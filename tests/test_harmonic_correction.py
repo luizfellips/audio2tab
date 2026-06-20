@@ -3,6 +3,7 @@ import pytest
 from app.core.config import Settings
 from app.models.notes import NoteEvent
 from app.services.harmonic_correction import (
+    align_cadence_octaves,
     apply_harmonic_corrections,
     collapse_semitone_shimmer,
     fold_harmonic_ghosts,
@@ -62,6 +63,41 @@ def test_fold_unpaired_octave_errors(synthetic_settings):
     folded = fold_unpaired_octave_errors(notes, settings)
 
     assert folded[1].pitch == "E4"
+
+
+def test_align_cadence_octaves_folds_motif_e_not_middle_phrase(synthetic_settings):
+    notes = [
+        NoteEvent(pitch="B2", start=1.4, end=1.6, velocity=90, amplitude=0.8),
+        NoteEvent(pitch="D3", start=1.8, end=2.0, velocity=90, amplitude=0.8),
+        NoteEvent(pitch="D#3", start=2.0, end=2.2, velocity=90, amplitude=0.8),
+        NoteEvent(pitch="E2", start=2.2, end=2.4, velocity=90, amplitude=0.8),
+        NoteEvent(pitch="A#2", start=4.0, end=4.2, velocity=90, amplitude=0.8),
+        NoteEvent(pitch="D3", start=4.2, end=4.4, velocity=90, amplitude=0.8),
+        NoteEvent(pitch="D#3", start=4.4, end=4.6, velocity=90, amplitude=0.8),
+        NoteEvent(pitch="E3", start=4.6, end=4.8, velocity=90, amplitude=0.8),
+        NoteEvent(pitch="B2", start=7.4, end=7.6, velocity=90, amplitude=0.8),
+        NoteEvent(pitch="D3", start=7.8, end=8.0, velocity=90, amplitude=0.8),
+        NoteEvent(pitch="D#3", start=8.0, end=8.2, velocity=90, amplitude=0.8),
+        NoteEvent(pitch="E3", start=8.2, end=8.4, velocity=90, amplitude=0.8),
+    ]
+
+    aligned = align_cadence_octaves(notes, synthetic_settings)
+
+    assert aligned[3].pitch == "E2"
+    assert aligned[7].pitch == "E3"
+    assert aligned[11].pitch == "E2"
+
+
+def test_align_cadence_octaves_keeps_e3_after_a_sharp(synthetic_settings):
+    notes = [
+        NoteEvent(pitch="B2", start=3.0, end=3.2, velocity=90, amplitude=0.8),
+        NoteEvent(pitch="A#2", start=3.2, end=3.4, velocity=90, amplitude=0.8),
+        NoteEvent(pitch="E3", start=3.4, end=3.6, velocity=90, amplitude=0.8),
+    ]
+
+    aligned = align_cadence_octaves(notes, synthetic_settings)
+
+    assert aligned[2].pitch == "E3"
 
 
 def test_apply_harmonic_corrections_runs_full_chain(synthetic_settings):
