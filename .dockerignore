@@ -1,0 +1,16 @@
+.venv
+__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+.pytest_cache
+.coverage
+htmlcov
+.env
+*.md
+notebooks
+outputs/*
+!outputs/.gitkeep
+samples/*
+!samples/.gitkeep

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Audio2Tab — MP3 to Guitar Tab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/css/app.css?v=8" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="header">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">♪</span>
+          <div>
+            <h1>Audio2Tab</h1>
+            <p class="tagline">Convert MP3 audio into playable guitar tablature</p>
+          </div>
+        </div>
+        <div class="pipeline" aria-label="Processing pipeline">
+          <span>MP3</span>
+          <span class="arrow">→</span>
+          <span>MIDI</span>
+          <span class="arrow">→</span>
+          <span>Notes</span>
+          <span class="arrow">→</span>
+          <span>TAB</span>
+        </div>
+      </header>
+
+      <main class="main">
+        <section class="card upload-card" aria-labelledby="upload-heading">
+          <h2 id="upload-heading">Upload audio</h2>
+          <p class="hint">MP3 files only · up to 50 MB · transcription may take a minute</p>
+
+          <div id="drop-zone" class="drop-zone" tabindex="0" role="button" aria-label="Drop MP3 file here or click to browse">
+            <input id="file-input" type="file" accept=".mp3,audio/mpeg" hidden />
+            <div class="drop-icon" aria-hidden="true">↑</div>
+            <p class="drop-title">Drop your MP3 here</p>
+            <p class="drop-subtitle">or click to browse</p>
+            <p id="selected-file" class="selected-file" hidden></p>
+          </div>
+
+          <div class="actions">
+            <button id="transcribe-btn" class="btn btn-primary" type="button" disabled>
+              Generate tablature
+            </button>
+            <button id="clear-btn" class="btn btn-ghost" type="button" hidden>
+              Clear
+            </button>
+          </div>
+
+          <div id="status" class="status" role="status" aria-live="polite" hidden></div>
+        </section>
+
+        <section id="results" class="card results-card" hidden aria-labelledby="results-heading">
+          <div class="results-header">
+            <h2 id="results-heading">Tablature</h2>
+            <span id="note-count" class="badge"></span>
+          </div>
+
+          <div id="playback" class="playback" hidden>
+            <div class="playback-controls">
+              <button id="play-btn" class="btn btn-play" type="button" aria-label="Play tab">
+                ▶ Play
+              </button>
+              <button id="pause-btn" class="btn btn-pause" type="button" disabled aria-label="Pause playback">
+                ⏸ Pause
+              </button>
+              <button id="stop-btn" class="btn btn-ghost" type="button" disabled aria-label="Stop and rewind">
+                ⏹ Stop
+              </button>
+              <span id="playback-time" class="playback-time">0:00 / 0:00</span>
+            </div>
+            <div
+              id="progress-track"
+              class="progress-track"
+              role="slider"
+              aria-label="Playback position"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+              tabindex="0"
+            >
+              <div id="progress-bar" class="progress-bar"></div>
+            </div>
+          </div>
+
+          <div class="note-line-panel">
+            <label for="note-line" class="note-line-label">Notes</label>
+            <textarea
+              id="note-line"
+              class="note-line"
+              readonly
+              rows="3"
+              aria-label="Note names during playback"
+              placeholder="Note names appear here during playback"
+            ></textarea>
+          </div>
+
+          <div id="tab-player-wrap" class="tab-player-wrap">
+            <pre id="tab-preview" class="tab-preview" aria-label="Generated guitar tablature"></pre>
+          </div>
+
+          <div class="downloads">
+            <h3>Downloads</h3>
+            <div id="download-links" class="download-links"></div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <p>Powered by Spotify Basic Pitch · Standard tuning E A D G B E</p>
+      </footer>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/tone@14.8.49/build/Tone.js"></script>
+    <script src="/static/js/tab_view.js?v=10"></script>
+    <script src="/static/js/player.js?v=10"></script>
+    <script src="/static/js/app.js?v=10"></script>
+  </body>
+</html>

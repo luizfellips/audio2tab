@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+
+# uv
+# .python-version is tracked to pin Python 3.12 for basic-pitch
+
+# Environment
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Outputs (generated artifacts)
+outputs/*
+!outputs/.gitkeep
+
+# Samples (user uploads — keep dir, ignore contents)
+samples/*
+!samples/.gitkeep
+
+# Generated music files
+*.mid
+*.tab
+*.notes.json
+*.positions.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.log
